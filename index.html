@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Entraînement aux intervalles</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎹</text></svg>">
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>🎹 Entraînement aux intervalles</h1>
+      <div class="header-actions">
+        <select id="direction-select" title="Direction des intervalles">
+          <option value="asc">Ascendant</option>
+          <option value="desc">Descendant</option>
+          <option value="both">Les deux</option>
+        </select>
+        <button id="stats-btn" class="ghost" title="Statistiques">📊</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="quiz" class="card">
+        <div class="level-info">
+          <span id="level-label"></span>
+          <div class="level-bar"><div id="level-progress"></div></div>
+        </div>
+
+        <button id="play-btn" class="play-btn">▶ Écouter</button>
+
+        <div id="answers" class="answers"></div>
+
+        <div id="feedback" class="feedback hidden">
+          <div id="feedback-text"></div>
+          <div id="song-area"></div>
+          <button id="next-btn" class="primary hidden">Continuer →</button>
+        </div>
+      </section>
+
+      <section id="stats" class="card hidden">
+        <h2>📊 Statistiques</h2>
+        <div id="stats-summary"></div>
+        <div id="stats-table"></div>
+        <button id="reset-btn" class="danger">🗑 Réinitialiser ma progression</button>
+      </section>
+    </main>
+
+    <footer>
+      <p>Les intervalles où tu te trompes le plus reviennent plus souvent.
+      De nouveaux intervalles se débloquent au fur et à mesure de tes progrès.</p>
+    </footer>
+  </div>
+
+  <script src="songs.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
