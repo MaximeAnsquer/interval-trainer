@@ -197,14 +197,19 @@ function recentAccuracy(id) {
   return recent.filter((h) => h.ok).length / recent.length;
 }
 
-// Pondération adaptative : les intervalles ratés récemment et les nouveaux
-// intervalles reviennent plus souvent.
+// Pondération adaptative : basée sur le taux de réussite global (le même
+// que celui affiché dans les statistiques), pour garantir qu'un intervalle
+// moins bien maîtrisé a toujours une probabilité au moins aussi élevée
+// qu'un intervalle mieux maîtrisé. Les nouveaux intervalles reviennent
+// aussi plus souvent le temps d'accumuler des tentatives.
 function intervalWeight(id, lastId = null) {
-  const attempts = state.history.filter((h) => h.i === id).length;
-  const acc = recentAccuracy(id);
+  const attempts = state.history.filter((h) => h.i === id);
   let w = 1;
-  if (acc !== null) w += 5 * (1 - acc); // plus d'erreurs → plus fréquent
-  if (attempts < 4) w += 2; // intervalle récent/débloqué → plus fréquent
+  if (attempts.length > 0) {
+    const acc = attempts.filter((h) => h.ok).length / attempts.length;
+    w += 5 * (1 - acc); // plus d'erreurs → plus fréquent
+  }
+  if (attempts.length < 4) w += 2; // intervalle récent/débloqué → plus fréquent
   if (lastId && id === lastId) w *= 0.3; // éviter de répéter le même
   return w;
 }
