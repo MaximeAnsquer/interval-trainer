@@ -130,18 +130,20 @@ function recentAccuracy(id) {
 
 // Pondération adaptative : les intervalles ratés récemment et les nouveaux
 // intervalles reviennent plus souvent.
+function intervalWeight(id, lastId = null) {
+  const attempts = state.history.filter((h) => h.i === id).length;
+  const acc = recentAccuracy(id);
+  let w = 1;
+  if (acc !== null) w += 5 * (1 - acc); // plus d'erreurs → plus fréquent
+  if (attempts < 4) w += 2; // intervalle récent/débloqué → plus fréquent
+  if (lastId && id === lastId) w *= 0.3; // éviter de répéter le même
+  return w;
+}
+
 function pickInterval() {
   const pool = unlockedIds();
   const lastId = state.history.length ? state.history[state.history.length - 1].i : null;
-  const weights = pool.map((id) => {
-    const attempts = state.history.filter((h) => h.i === id).length;
-    const acc = recentAccuracy(id);
-    let w = 1;
-    if (acc !== null) w += 5 * (1 - acc); // plus d'erreurs → plus fréquent
-    if (attempts < 4) w += 2; // intervalle récent/débloqué → plus fréquent
-    if (id === lastId) w *= 0.3; // éviter de répéter le même
-    return w;
-  });
+  const weights = pool.map((id) => intervalWeight(id, lastId));
   const total = weights.reduce((a, b) => a + b, 0);
   let r = Math.random() * total;
   for (let k = 0; k < pool.length; k++) {
@@ -367,15 +369,35 @@ function renderStats() {
     ? `${total} réponses au total — ${Math.round((correct / total) * 100)} % de réussite.`
     : "Aucune réponse pour l'instant. Lance-toi !";
 
-  const unlocked = new Set(unlockedIds());
-  const rows = INTERVALS.map((interval) => {
-    const attempts = state.history.filter((h) => h.i === interval.id);
-    const isUnlocked = unlocked.has(interval.id);
-    if (!isUnlocked) {
-      return `<div class="stat-row stat-locked"><span>🔒 ${interval.name}</span><div class="stat-bar-track"></div><span class="stat-pct">—</span></div>`;
+  // Probabilité d'apparition : poids adaptatif de l'intervalle rapporté au
+  // total (sans le malus anti-répétition, qui varie à chaque question).
+  const pool = unlockedIds();
+  const totalWeight = pool.reduce((sum, id) => sum + intervalWeight(id), 0);
+  const proba = (id) => intervalWeight(id) / totalWeight;
+
+  const unlocked = new Set(pool);
+  const sorted = [...INTERVALS].sort((a, b) => {
+    const ua = unlocked.has(a.id), ub = unlocked.has(b.id);
+    if (ua !== ub) return ua ? -1 : 1; // verrouillés en bas
+    if (!ua) return 0;
+    return proba(b.id) - proba(a.id);
+  });
+
+  const header = `<div class="stat-row stat-header">
+    <span>Intervalle</span>
+    <span>Réussite</span>
+    <span class="stat-pct"></span>
+    <span class="stat-proba">Proba</span>
+  </div>`;
+
+  const rows = sorted.map((interval) => {
+    if (!unlocked.has(interval.id)) {
+      return `<div class="stat-row stat-locked"><span>🔒 ${interval.name}</span><div class="stat-bar-track"></div><span class="stat-pct">—</span><span class="stat-proba">—</span></div>`;
     }
+    const probaPct = `${Math.round(proba(interval.id) * 100)} %`;
+    const attempts = state.history.filter((h) => h.i === interval.id);
     if (attempts.length === 0) {
-      return `<div class="stat-row"><span>${interval.name}</span><div class="stat-bar-track"></div><span class="stat-pct">0 essai</span></div>`;
+      return `<div class="stat-row"><span>${interval.name}</span><div class="stat-bar-track"></div><span class="stat-pct">0 essai</span><span class="stat-proba">${probaPct}</span></div>`;
     }
     const acc = attempts.filter((h) => h.ok).length / attempts.length;
     const pct = Math.round(acc * 100);
@@ -384,9 +406,10 @@ function renderStats() {
       <span>${interval.name}</span>
       <div class="stat-bar-track"><div class="stat-bar ${cls}" style="width:${pct}%"></div></div>
       <span class="stat-pct">${pct} % (${attempts.length})</span>
+      <span class="stat-proba">${probaPct}</span>
     </div>`;
   }).join("");
-  $("#stats-table").innerHTML = rows;
+  $("#stats-table").innerHTML = header + rows;
 }
 
 function resetProgress() {
