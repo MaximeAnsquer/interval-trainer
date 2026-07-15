@@ -26,11 +26,12 @@
         <div class="timer-mode-row">
           <span class="timer-mode-label">⏱ Mode chrono :</span>
           <div id="timer-options" class="timer-options">
-            <button class="timer-opt active" data-min="0">Libre</button>
-            <button class="timer-opt" data-min="1">1 min</button>
-            <button class="timer-opt" data-min="2">2 min</button>
-            <button class="timer-opt" data-min="3">3 min</button>
-            <button class="timer-opt" data-min="5">5 min</button>
+            <button class="timer-opt active" data-mode="free">Libre</button>
+            <button class="timer-opt" data-mode="nofilet">🎯 Sans filet</button>
+            <button class="timer-opt" data-mode="timed" data-min="1">1 min</button>
+            <button class="timer-opt" data-mode="timed" data-min="2">2 min</button>
+            <button class="timer-opt" data-mode="timed" data-min="3">3 min</button>
+            <button class="timer-opt" data-mode="timed" data-min="5">5 min</button>
           </div>
         </div>
         <div id="session-hud" class="session-hud hidden">
@@ -71,6 +72,19 @@
         <h2>📊 Statistiques</h2>
         <div id="stats-summary"></div>
         <div id="stats-table"></div>
+
+        <h2>🏆 Meilleurs scores</h2>
+        <div id="best-scores" class="best-scores"></div>
+
+        <h2>📈 Progression (10 derniers jours)</h2>
+        <div id="progress-chart"></div>
+
+        <div class="io-actions">
+          <button id="export-btn" class="ghost">⬇️ Exporter ma progression</button>
+          <button id="import-btn" class="ghost">⬆️ Importer une progression</button>
+          <input type="file" id="import-input" accept="application/json" class="hidden">
+        </div>
+
         <button id="reset-btn" class="danger">🗑 Réinitialiser ma progression</button>
       </section>
     </main>

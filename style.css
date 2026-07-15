@@ -278,7 +278,8 @@ button:active { transform: scale(0.97); }
 .hidden { display: none !important; }
 
 /* Stats */
-#stats h2, #recap h2 { font-size: 1.1rem; margin-bottom: 12px; }
+#stats h2, #recap h2 { font-size: 1.1rem; margin-bottom: 12px; margin-top: 24px; }
+#stats h2:first-child { margin-top: 0; }
 #stats-summary { color: var(--muted); font-size: 0.9rem; margin-bottom: 16px; }
 .stat-row {
   display: grid;
@@ -337,3 +338,67 @@ button:active { transform: scale(0.97); }
 
 footer { text-align: center; padding: 8px 16px 24px; }
 footer p { color: var(--muted); font-size: 0.8rem; line-height: 1.5; }
+
+/* Meilleurs scores */
+.best-scores { display: flex; flex-direction: column; gap: 2px; }
+.best-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  font-size: 0.88rem;
+  border-bottom: 1px solid var(--card-2);
+}
+.best-row:last-child { border-bottom: none; }
+.best-row span:last-child { color: var(--gold); font-weight: 700; }
+
+/* Graphique de progression */
+.chart-empty { color: var(--muted); font-size: 0.85rem; }
+.chart-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 110px;
+  padding-top: 8px;
+}
+.chart-bar-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  min-width: 0;
+}
+.chart-bar {
+  width: 100%;
+  max-width: 22px;
+  min-height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--green);
+}
+.chart-bar.mid { background: var(--gold); }
+.chart-bar.low { background: var(--red); }
+.chart-bar.empty { background: var(--card-2); }
+.chart-day-label {
+  font-size: 0.6rem;
+  color: var(--muted);
+  margin-top: 6px;
+  white-space: nowrap;
+}
+
+/* Récapitulatif : badge de record */
+.recap-record {
+  text-align: center;
+  font-size: 0.88rem;
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+.recap-record.new {
+  color: var(--gold);
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+/* Export / import */
+.io-actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 16px 0; }
+.io-actions .ghost { flex: 1 1 auto; text-align: center; font-size: 0.88rem; }

@@ -11,6 +11,10 @@ Petite application web pour apprendre à reconnaître les intervalles musicaux �
 - **Répétition adaptative** : les intervalles sur lesquels on se trompe le plus reviennent plus souvent.
 - **Chansons de référence** : en cas d'erreur, une liste de chansons célèbres commençant par cet intervalle est proposée (sources : [Musicca](https://www.musicca.com/interval-song-chart), [EarMaster](https://www.earmaster.com/products/free-tools/interval-song-chart-generator.html)). On en choisit une comme référence — ou on ajoute la sienne — et c'est ensuite elle qui est rappelée à chaque nouvelle erreur.
 - **Mode chrono** : sessions de 1, 2, 3 ou 5 minutes avec décompte, score et meilleure série en direct, puis un récapitulatif en fin de session.
+- **Mode « sans filet »** : on enchaîne les questions jusqu'à la première erreur ; le récapitulatif indique la série réalisée.
+- **Meilleurs scores** persistés par durée de chrono et pour le mode sans filet, avec badge « Nouveau record ! » quand on les bat.
+- **Graphique de progression** sur les 10 derniers jours dans le panneau de statistiques.
+- **Export / import** de la progression au format JSON, pour sauvegarder ou transférer ses données entre appareils.
 - **Historique** conservé dans le navigateur (localStorage), avec statistiques par intervalle (mises à jour en temps réel) et bouton de réinitialisation.
 - Réglage de la direction des intervalles : ascendant, descendant ou les deux.
 

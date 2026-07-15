@@ -9,6 +9,8 @@ const defaultState = () => ({
   //          ou { src: "builtin"|"custom", idx } (nouveau format)
   refSongs: {},
   customSongs: {}, // "m3-asc" -> [{ title, artist }] ajoutées par l'utilisateur
+  // Meilleurs scores : { timed: { "1": {correct,total,at}, ... }, nofilet: {streak,at} }
+  bestScores: { timed: {}, nofilet: null },
   settings: { direction: "asc" },
 });
 
@@ -17,7 +19,16 @@ function loadState() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultState();
     const s = JSON.parse(raw);
-    return { ...defaultState(), ...s, settings: { ...defaultState().settings, ...s.settings } };
+    return {
+      ...defaultState(),
+      ...s,
+      settings: { ...defaultState().settings, ...s.settings },
+      bestScores: {
+        ...defaultState().bestScores,
+        ...s.bestScores,
+        timed: { ...(s.bestScores && s.bestScores.timed) },
+      },
+    };
   } catch {
     return defaultState();
   }
@@ -269,6 +280,10 @@ function answer(id) {
       sessionStats.bestStreak = Math.max(sessionStats.bestStreak, sessionStats.streak);
     } else {
       sessionStats.streak = 0;
+      // En mode "sans filet", la première erreur met fin à la série ; la
+      // session se termine quand l'utilisateur clique sur "Continuer" après
+      // avoir vu la correction et la chanson de référence.
+      if (sessionStats.mode === "nofilet") sessionStats.dead = true;
     }
     updateSessionHud();
   }
@@ -286,28 +301,36 @@ function answer(id) {
     // En mode chrono, le temps peut s'écouler pendant le délai : on vérifie
     // que la session est toujours active avant d'enchaîner.
     setTimeout(() => {
-      if (!sessionStats || sessionTimerId) newQuestion();
+      if (!sessionStats || sessionActive) newQuestion();
     }, 1200);
   }
 }
 
-// ---------- Mode chrono ----------
+// ---------- Modes de jeu : libre, chrono, sans filet ----------
 
-let timerMode = 0; // 0 = libre, sinon durée en minutes
-let lastSessionMinutes = 1;
+let mode = "free"; // "free" | "timed" | "nofilet"
+let timedMinutes = 1; // dernière durée de chrono choisie
 let sessionTimerId = null;
 let sessionEndAt = 0;
-let sessionStats = null; // { correct, total, streak, bestStreak, minutes }
+let sessionActive = false;
+let sessionStats = null; // { mode, correct, total, streak, bestStreak, minutes?, dead }
 
 function updateSessionHud(remainingMs) {
   if (!sessionStats) return;
-  if (remainingMs === undefined) remainingMs = Math.max(0, sessionEndAt - Date.now());
-  const totalSec = Math.ceil(remainingMs / 1000);
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  $("#session-time").textContent = `${m}:${String(s).padStart(2, "0")}`;
-  $("#session-score").textContent = `✅ ${sessionStats.correct} / ${sessionStats.total}`;
-  $("#session-streak").textContent = sessionStats.streak > 1 ? `🔥 ${sessionStats.streak}` : "";
+  const timeEl = $("#session-time");
+  if (sessionStats.mode === "timed") {
+    timeEl.classList.remove("hidden");
+    if (remainingMs === undefined) remainingMs = Math.max(0, sessionEndAt - Date.now());
+    const totalSec = Math.ceil(remainingMs / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    timeEl.textContent = `${m}:${String(s).padStart(2, "0")}`;
+    $("#session-score").textContent = `✅ ${sessionStats.correct} / ${sessionStats.total}`;
+  } else {
+    timeEl.classList.add("hidden");
+    $("#session-score").textContent = "🎯 Sans filet";
+  }
+  $("#session-streak").textContent = `🔥 ${sessionStats.streak}`;
 }
 
 function tickSession() {
@@ -319,52 +342,114 @@ function tickSession() {
   updateSessionHud(remaining);
 }
 
-function startSession(minutes) {
-  lastSessionMinutes = minutes;
-  sessionStats = { correct: 0, total: 0, streak: 0, bestStreak: 0, minutes };
+function startTimedSession(minutes) {
+  timedMinutes = minutes;
+  sessionStats = { mode: "timed", minutes, correct: 0, total: 0, streak: 0, bestStreak: 0, dead: false };
   sessionEndAt = Date.now() + minutes * 60000;
+  sessionActive = true;
   $("#session-hud").classList.remove("hidden");
-  hideRecap();
   updateSessionHud();
   sessionTimerId = setInterval(tickSession, 250);
+  newQuestion();
+}
+
+function startNofiletSession() {
+  sessionStats = { mode: "nofilet", correct: 0, total: 0, streak: 0, bestStreak: 0, dead: false };
+  sessionActive = true;
+  $("#session-hud").classList.remove("hidden");
+  updateSessionHud();
   newQuestion();
 }
 
 function endSession() {
   clearInterval(sessionTimerId);
   sessionTimerId = null;
+  sessionActive = false;
   answered = true;
   document.querySelectorAll(".answer-btn").forEach((b) => (b.disabled = true));
   $("#session-hud").classList.add("hidden");
-  showRecap();
+  const isNewRecord = checkRecord();
+  showRecap(isNewRecord);
 }
 
-function selectTimerMode(minutes) {
+function selectMode(newMode, minutes) {
   clearInterval(sessionTimerId);
   sessionTimerId = null;
-  timerMode = minutes;
+  sessionActive = false;
+  mode = newMode;
   document.querySelectorAll(".timer-opt").forEach((b) => {
-    b.classList.toggle("active", Number(b.dataset.min) === minutes);
+    const active = b.dataset.mode === newMode && (newMode !== "timed" || Number(b.dataset.min) === minutes);
+    b.classList.toggle("active", active);
   });
-  if (minutes > 0) {
-    startSession(minutes);
+  hideRecap();
+  if (newMode === "timed") {
+    startTimedSession(minutes);
+  } else if (newMode === "nofilet") {
+    startNofiletSession();
   } else {
     sessionStats = null;
     $("#session-hud").classList.add("hidden");
-    hideRecap();
     newQuestion();
   }
 }
 
-function showRecap() {
+// Enregistre un nouveau record si le résultat de la session dépasse le
+// meilleur score connu pour ce mode. Renvoie true si un record est battu.
+function checkRecord() {
+  const s = sessionStats;
+  if (s.mode === "timed") {
+    const key = String(s.minutes);
+    const prev = state.bestScores.timed[key];
+    const isNew = !prev || s.correct > prev.correct;
+    if (isNew) {
+      state.bestScores.timed[key] = { correct: s.correct, total: s.total, at: Date.now() };
+      saveState();
+    }
+    return isNew;
+  }
+  if (s.mode === "nofilet") {
+    const prev = state.bestScores.nofilet;
+    const isNew = !prev || s.bestStreak > prev.streak;
+    if (isNew) {
+      state.bestScores.nofilet = { streak: s.bestStreak, at: Date.now() };
+      saveState();
+    }
+    return isNew;
+  }
+  return false;
+}
+
+function bestScoreLine(s) {
+  if (s.mode === "timed") {
+    const best = state.bestScores.timed[String(s.minutes)];
+    return best ? `<div class="recap-record">Record actuel : ${best.correct}/${best.total} bonnes réponses</div>` : "";
+  }
+  if (s.mode === "nofilet") {
+    const best = state.bestScores.nofilet;
+    return best ? `<div class="recap-record">Record actuel : ${best.streak} 🔥 d'affilée</div>` : "";
+  }
+  return "";
+}
+
+function showRecap(isNewRecord) {
   const s = sessionStats;
   const acc = s.total ? Math.round((s.correct / s.total) * 100) : 0;
-  $("#recap-body").innerHTML = `
-    <div class="recap-stats">
-      <div class="recap-stat"><span class="recap-num">${s.correct}/${s.total}</span><span>bonnes réponses</span></div>
-      <div class="recap-stat"><span class="recap-num">${acc} %</span><span>de réussite</span></div>
-      <div class="recap-stat"><span class="recap-num">${s.bestStreak}</span><span>meilleure série</span></div>
-    </div>`;
+  $("#recap-title").textContent = s.mode === "nofilet" ? "🎯 Série interrompue !" : "⏱ Temps écoulé !";
+
+  const statsHtml =
+    s.mode === "nofilet"
+      ? `<div class="recap-stats">
+          <div class="recap-stat"><span class="recap-num">${s.bestStreak}</span><span>bonnes réponses d'affilée</span></div>
+          <div class="recap-stat"><span class="recap-num">${s.total}</span><span>questions posées</span></div>
+        </div>`
+      : `<div class="recap-stats">
+          <div class="recap-stat"><span class="recap-num">${s.correct}/${s.total}</span><span>bonnes réponses</span></div>
+          <div class="recap-stat"><span class="recap-num">${acc} %</span><span>de réussite</span></div>
+          <div class="recap-stat"><span class="recap-num">${s.bestStreak}</span><span>meilleure série</span></div>
+        </div>`;
+  const recordHtml = isNewRecord ? `<div class="recap-record new">🏆 Nouveau record !</div>` : bestScoreLine(s);
+
+  $("#recap-body").innerHTML = statsHtml + recordHtml;
   $("#quiz").classList.add("hidden");
   $("#recap").classList.remove("hidden");
 }
@@ -372,6 +457,11 @@ function showRecap() {
 function hideRecap() {
   $("#recap").classList.add("hidden");
   $("#quiz").classList.remove("hidden");
+}
+
+function handleNext() {
+  if (sessionStats && sessionStats.dead) endSession();
+  else newQuestion();
 }
 
 // ---------- Rendu ----------
@@ -568,15 +658,128 @@ function renderStats() {
     </div>`;
   }).join("");
   $("#stats-table").innerHTML = header + rows;
+
+  renderBestScores();
+  renderProgressChart();
+}
+
+function renderBestScores() {
+  const b = state.bestScores;
+  const nofiletVal = b.nofilet ? `${b.nofilet.streak} 🔥` : "—";
+  const timedRows = [1, 2, 3, 5]
+    .map((min) => {
+      const rec = b.timed[String(min)];
+      const val = rec ? `${rec.correct}/${rec.total} bonnes réponses` : "—";
+      return `<div class="best-row"><span>${min} min</span><span>${val}</span></div>`;
+    })
+    .join("");
+  $("#best-scores").innerHTML = `
+    <div class="best-row"><span>🎯 Sans filet</span><span>${nofiletVal}</span></div>
+    ${timedRows}`;
+}
+
+function dayKey(ts) {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function renderProgressChart() {
+  const DAYS = 10;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const buckets = [];
+  for (let i = DAYS - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    buckets.push({ key: dayKey(d.getTime()), date: d, correct: 0, total: 0 });
+  }
+  const byKey = Object.fromEntries(buckets.map((b) => [b.key, b]));
+  for (const h of state.history) {
+    const b = byKey[dayKey(h.t)];
+    if (b) {
+      b.total++;
+      if (h.ok) b.correct++;
+    }
+  }
+
+  const container = $("#progress-chart");
+  if (!buckets.some((b) => b.total > 0)) {
+    container.innerHTML = `<p class="chart-empty">Pas encore assez de données pour un graphique. Continue à t'entraîner !</p>`;
+    return;
+  }
+
+  const bars = buckets
+    .map((b) => {
+      const pct = b.total ? Math.round((b.correct / b.total) * 100) : null;
+      const height = pct === null ? 3 : Math.max(6, pct);
+      const cls = pct === null ? "empty" : pct >= 80 ? "" : pct >= 50 ? "mid" : "low";
+      const label = `${String(b.date.getDate()).padStart(2, "0")}/${String(b.date.getMonth() + 1).padStart(2, "0")}`;
+      const title = pct === null ? `${label} : aucune réponse` : `${label} : ${b.correct}/${b.total} (${pct} %)`;
+      return `<div class="chart-bar-wrap" title="${title}">
+        <div class="chart-bar ${cls}" style="height:${height}%"></div>
+        <span class="chart-day-label">${label}</span>
+      </div>`;
+    })
+    .join("");
+  container.innerHTML = `<div class="chart-bars">${bars}</div>`;
 }
 
 function resetProgress() {
-  if (!confirm("Réinitialiser toute ta progression (historique, niveaux, chansons de référence) ?")) return;
+  if (!confirm("Réinitialiser toute ta progression (historique, niveaux, chansons de référence, records) ?")) return;
   state = defaultState();
   saveState();
   renderLevel();
   renderStats();
-  selectTimerMode(0);
+  selectMode("free", null);
+}
+
+// ---------- Export / import ----------
+
+function exportProgress() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `interval-trainer-progression-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function importProgress(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    let parsed;
+    try {
+      parsed = JSON.parse(reader.result);
+    } catch {
+      alert("Fichier invalide : ce n'est pas un JSON valide.");
+      return;
+    }
+    if (!parsed || !Array.isArray(parsed.history)) {
+      alert("Fichier invalide : ce n'est pas une sauvegarde de progression reconnue.");
+      return;
+    }
+    if (!confirm("Importer ce fichier remplacera ta progression actuelle. Continuer ?")) return;
+    state = {
+      ...defaultState(),
+      ...parsed,
+      settings: { ...defaultState().settings, ...parsed.settings },
+      bestScores: {
+        ...defaultState().bestScores,
+        ...parsed.bestScores,
+        timed: { ...(parsed.bestScores && parsed.bestScores.timed) },
+      },
+    };
+    saveState();
+    $("#direction-select").value = state.settings.direction;
+    renderLevel();
+    renderStats();
+    selectMode("free", null);
+    alert("Progression importée avec succès !");
+  };
+  reader.readAsText(file);
 }
 
 // ---------- Initialisation ----------
@@ -587,7 +790,7 @@ $("#play-btn").addEventListener("click", () => {
   else newQuestion(); // newQuestion() joue elle-même l'intervalle
 });
 
-$("#next-btn").addEventListener("click", newQuestion);
+$("#next-btn").addEventListener("click", handleNext);
 
 $("#stats-btn").addEventListener("click", () => {
   const stats = $("#stats");
@@ -598,10 +801,21 @@ $("#stats-btn").addEventListener("click", () => {
 $("#reset-btn").addEventListener("click", resetProgress);
 
 document.querySelectorAll(".timer-opt").forEach((btn) => {
-  btn.addEventListener("click", () => selectTimerMode(Number(btn.dataset.min)));
+  btn.addEventListener("click", () => {
+    const m = btn.dataset.mode;
+    selectMode(m, m === "timed" ? Number(btn.dataset.min) : null);
+  });
 });
-$("#recap-replay").addEventListener("click", () => selectTimerMode(lastSessionMinutes));
-$("#recap-free").addEventListener("click", () => selectTimerMode(0));
+$("#recap-replay").addEventListener("click", () => selectMode(mode, mode === "timed" ? timedMinutes : null));
+$("#recap-free").addEventListener("click", () => selectMode("free", null));
+
+$("#export-btn").addEventListener("click", exportProgress);
+$("#import-btn").addEventListener("click", () => $("#import-input").click());
+$("#import-input").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (file) importProgress(file);
+  e.target.value = "";
+});
 
 $("#direction-select").value = state.settings.direction;
 $("#direction-select").addEventListener("change", (e) => {
