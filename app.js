@@ -5,7 +5,10 @@ const STORAGE_KEY = "interval-trainer-v1";
 const defaultState = () => ({
   level: 1, // nombre d'intervalles débloqués - 1 (level 1 = 2 intervalles)
   history: [], // { i: intervalId, d: "asc"|"desc", a: réponse, ok: bool, t: timestamp }
-  refSongs: {}, // "m3-asc" -> index dans SONGS[id][dir]
+  // "m3-asc" -> index dans SONGS[id][dir] (nombre, ancien format)
+  //          ou { src: "builtin"|"custom", idx } (nouveau format)
+  refSongs: {},
+  customSongs: {}, // "m3-asc" -> [{ title, artist }] ajoutées par l'utilisateur
   settings: { direction: "asc" },
 });
 
@@ -277,47 +280,72 @@ function showFeedback(ok) {
 }
 
 // Aide mnémotechnique : chanson de référence pour l'intervalle raté
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function getChosenSong(key, builtin, custom) {
+  const ref = state.refSongs[key];
+  if (ref === undefined) return null;
+  if (typeof ref === "number") return builtin[ref] || null; // ancien format
+  return ref.src === "custom" ? custom[ref.idx] || null : builtin[ref.idx] || null;
+}
+
 function renderSongArea(forceChoice = false) {
   const area = $("#song-area");
   const { id, direction } = currentQuestion;
-  const songs = (SONGS[id] && SONGS[id][direction]) || [];
-  if (songs.length === 0) {
-    area.innerHTML = "";
-    return;
-  }
   const key = `${id}-${direction}`;
-  const chosenIdx = state.refSongs[key];
+  const builtin = (SONGS[id] && SONGS[id][direction]) || [];
+  const custom = state.customSongs[key] || [];
+  const chosen = getChosenSong(key, builtin, custom);
 
-  if (chosenIdx !== undefined && songs[chosenIdx] && !forceChoice) {
-    const song = songs[chosenIdx];
+  if (chosen && !forceChoice) {
     area.innerHTML = `
       <div class="song-hint">
         💡 Pense à ta chanson de référence :
-        <div class="song-title">${song.title}</div>
-        <div class="song-artist">${song.artist}</div>
+        <div class="song-title">${escapeHtml(chosen.title)}</div>
+        <div class="song-artist">${escapeHtml(chosen.artist || "")}</div>
       </div>
       <button class="change-song">Choisir une autre chanson de référence</button>`;
     area.querySelector(".change-song").addEventListener("click", () => renderSongArea(true));
   } else {
-    const items = songs
-      .map(
-        (s, k) => `
-        <button class="song-choice" data-idx="${k}">
-          🎵 <strong>${s.title}</strong>
-          <span class="song-artist">— ${s.artist}</span>
-        </button>`
-      )
-      .join("");
+    const item = (s, src, k) => `
+        <button class="song-choice" data-src="${src}" data-idx="${k}">
+          ${src === "custom" ? "⭐" : "🎵"} <strong>${escapeHtml(s.title)}</strong>
+          ${s.artist ? `<span class="song-artist">— ${escapeHtml(s.artist)}</span>` : ""}
+        </button>`;
+    const items =
+      builtin.map((s, k) => item(s, "builtin", k)).join("") +
+      custom.map((s, k) => item(s, "custom", k)).join("");
     area.innerHTML = `
       <p>Ces chansons célèbres commencent par cet intervalle.
       <strong>Choisis celle qui te parle le plus</strong> : elle deviendra ta référence.</p>
-      <div class="song-choices">${items}</div>`;
+      <div class="song-choices">${items}</div>
+      <form class="add-song">
+        <input type="text" name="title" placeholder="Ou ajoute ta propre chanson…" required>
+        <input type="text" name="artist" placeholder="Artiste (optionnel)">
+        <button type="submit" class="primary add-song-btn">+ Ajouter comme référence</button>
+      </form>`;
     area.querySelectorAll(".song-choice").forEach((btn) => {
       btn.addEventListener("click", () => {
-        state.refSongs[key] = Number(btn.dataset.idx);
+        state.refSongs[key] = { src: btn.dataset.src, idx: Number(btn.dataset.idx) };
         saveState();
         renderSongArea();
       });
+    });
+    area.querySelector(".add-song").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const title = e.target.title.value.trim();
+      if (!title) return;
+      const artist = e.target.artist.value.trim();
+      if (!state.customSongs[key]) state.customSongs[key] = [];
+      state.customSongs[key].push({ title, artist });
+      state.refSongs[key] = { src: "custom", idx: state.customSongs[key].length - 1 };
+      saveState();
+      renderSongArea();
     });
   }
 }

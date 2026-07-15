@@ -167,6 +167,32 @@ button:active { transform: scale(0.97); }
 .song-choice:hover { border-color: var(--gold); }
 .song-choice .song-artist { color: var(--muted); font-size: 0.8rem; }
 
+.add-song {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--card);
+}
+.add-song input {
+  flex: 1 1 160px;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--card-2);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+.add-song input::placeholder { color: var(--muted); }
+.add-song input:focus { outline: none; border-color: var(--gold); }
+.add-song .add-song-btn {
+  flex: 1 1 100%;
+  margin-top: 0;
+  font-size: 0.9rem;
+}
+
 .primary {
   background: var(--accent);
   color: white;
