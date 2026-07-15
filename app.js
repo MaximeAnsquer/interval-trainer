@@ -29,22 +29,72 @@ function saveState() {
 
 let state = loadState();
 
-// ---------- Audio : son de type piano (Web Audio) ----------
+// ---------- Audio : piano (échantillons Salamander via Tone.js, repli synthétisé) ----------
 
-let audioCtx = null;
+// Jeu épars d'échantillons (Tone.js interpole les notes manquantes par pitch-shift)
+const SAMPLE_NOTES = [
+  "A0", "C1", "Ds1", "Fs1", "A1", "C2", "Ds2", "Fs2", "A2", "C3", "Ds3", "Fs3", "A3",
+  "C4", "Ds4", "Fs4", "A4", "C5", "Ds5", "Fs5", "A5", "C6", "Ds6", "Fs6", "A6", "C7",
+];
 
-function getCtx() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if (audioCtx.state === "suspended") audioCtx.resume();
-  return audioCtx;
+let sampler = null;
+let samplerReady = false;
+let samplerFailed = false;
+let fallbackCtx = null; // Web Audio, utilisé seulement si les échantillons ne se chargent pas
+
+function setAudioStatus(text, kind, autoHideMs) {
+  const el = $("#audio-status");
+  if (!text) {
+    el.classList.add("hidden");
+    el.textContent = "";
+    return;
+  }
+  el.textContent = text;
+  el.className = `audio-status ${kind || ""}`;
+  el.classList.remove("hidden");
+  if (autoHideMs) setTimeout(() => setAudioStatus(""), autoHideMs);
+}
+
+function initSampler() {
+  if (sampler || samplerFailed) return;
+  if (typeof Tone === "undefined") {
+    samplerFailed = true;
+    return;
+  }
+  setAudioStatus("🎹 Chargement du piano…", "loading");
+  const urls = {};
+  for (const n of SAMPLE_NOTES) urls[n.replace("s", "#")] = `${n}.mp3`;
+  sampler = new Tone.Sampler({
+    urls,
+    baseUrl: "https://tonejs.github.io/audio/salamander/",
+    onload: () => {
+      samplerReady = true;
+      setAudioStatus("");
+    },
+    onerror: () => {
+      samplerFailed = true;
+      setAudioStatus("🎹 Son synthétisé (échantillons indisponibles)", "warn", 3000);
+    },
+  }).toDestination();
+}
+
+function getFallbackCtx() {
+  if (!fallbackCtx) fallbackCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (fallbackCtx.state === "suspended") fallbackCtx.resume();
+  return fallbackCtx;
 }
 
 function midiToFreq(midi) {
   return 440 * Math.pow(2, (midi - 69) / 12);
 }
 
-function playPianoNote(midi, when, duration = 1.4) {
-  const ctx = getCtx();
+function midiToNoteName(midi) {
+  const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  return NAMES[midi % 12] + (Math.floor(midi / 12) - 1);
+}
+
+function playFallbackNote(midi, when, duration = 1.4) {
+  const ctx = getFallbackCtx();
   const freq = midiToFreq(midi);
   const master = ctx.createGain();
   master.gain.setValueAtTime(0, when);
@@ -94,11 +144,19 @@ function playPianoNote(midi, when, duration = 1.4) {
   noise.stop(when + 0.12);
 }
 
+function playNote(midi, delaySec) {
+  if (samplerReady && sampler) {
+    sampler.triggerAttackRelease(midiToNoteName(midi), 1.4, `+${delaySec}`);
+  } else {
+    const ctx = getFallbackCtx();
+    playFallbackNote(midi, ctx.currentTime + delaySec + 0.03);
+  }
+}
+
 function playInterval(q) {
-  const ctx = getCtx();
-  const t = ctx.currentTime + 0.05;
-  playPianoNote(q.note1, t);
-  playPianoNote(q.note2, t + 0.9);
+  if (typeof Tone !== "undefined") Tone.start();
+  playNote(q.note1, 0.05);
+  playNote(q.note2, 0.95);
 }
 
 // ---------- Logique du quiz ----------
@@ -203,17 +261,117 @@ function answer(id) {
   if (ok) newInterval = checkLevelUp();
   saveState();
 
+  if (sessionStats) {
+    sessionStats.total++;
+    if (ok) {
+      sessionStats.correct++;
+      sessionStats.streak++;
+      sessionStats.bestStreak = Math.max(sessionStats.bestStreak, sessionStats.streak);
+    } else {
+      sessionStats.streak = 0;
+    }
+    updateSessionHud();
+  }
+
   markAnswers(id, currentQuestion.id);
   showFeedback(ok);
   renderLevel();
+  if (!$("#stats").classList.contains("hidden")) renderStats();
 
   if (newInterval) {
     showToast(`🎉 Nouvel intervalle débloqué : ${newInterval.name} !`);
   }
 
   if (ok) {
-    setTimeout(newQuestion, 1200);
+    // En mode chrono, le temps peut s'écouler pendant le délai : on vérifie
+    // que la session est toujours active avant d'enchaîner.
+    setTimeout(() => {
+      if (!sessionStats || sessionTimerId) newQuestion();
+    }, 1200);
   }
+}
+
+// ---------- Mode chrono ----------
+
+let timerMode = 0; // 0 = libre, sinon durée en minutes
+let lastSessionMinutes = 1;
+let sessionTimerId = null;
+let sessionEndAt = 0;
+let sessionStats = null; // { correct, total, streak, bestStreak, minutes }
+
+function updateSessionHud(remainingMs) {
+  if (!sessionStats) return;
+  if (remainingMs === undefined) remainingMs = Math.max(0, sessionEndAt - Date.now());
+  const totalSec = Math.ceil(remainingMs / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  $("#session-time").textContent = `${m}:${String(s).padStart(2, "0")}`;
+  $("#session-score").textContent = `✅ ${sessionStats.correct} / ${sessionStats.total}`;
+  $("#session-streak").textContent = sessionStats.streak > 1 ? `🔥 ${sessionStats.streak}` : "";
+}
+
+function tickSession() {
+  const remaining = sessionEndAt - Date.now();
+  if (remaining <= 0) {
+    endSession();
+    return;
+  }
+  updateSessionHud(remaining);
+}
+
+function startSession(minutes) {
+  lastSessionMinutes = minutes;
+  sessionStats = { correct: 0, total: 0, streak: 0, bestStreak: 0, minutes };
+  sessionEndAt = Date.now() + minutes * 60000;
+  $("#session-hud").classList.remove("hidden");
+  hideRecap();
+  updateSessionHud();
+  sessionTimerId = setInterval(tickSession, 250);
+  newQuestion();
+}
+
+function endSession() {
+  clearInterval(sessionTimerId);
+  sessionTimerId = null;
+  answered = true;
+  document.querySelectorAll(".answer-btn").forEach((b) => (b.disabled = true));
+  $("#session-hud").classList.add("hidden");
+  showRecap();
+}
+
+function selectTimerMode(minutes) {
+  clearInterval(sessionTimerId);
+  sessionTimerId = null;
+  timerMode = minutes;
+  document.querySelectorAll(".timer-opt").forEach((b) => {
+    b.classList.toggle("active", Number(b.dataset.min) === minutes);
+  });
+  if (minutes > 0) {
+    startSession(minutes);
+  } else {
+    sessionStats = null;
+    $("#session-hud").classList.add("hidden");
+    hideRecap();
+    newQuestion();
+  }
+}
+
+function showRecap() {
+  const s = sessionStats;
+  const acc = s.total ? Math.round((s.correct / s.total) * 100) : 0;
+  $("#recap-body").innerHTML = `
+    <div class="recap-stats">
+      <div class="recap-stat"><span class="recap-num">${s.correct}/${s.total}</span><span>bonnes réponses</span></div>
+      <div class="recap-stat"><span class="recap-num">${acc} %</span><span>de réussite</span></div>
+      <div class="recap-stat"><span class="recap-num">${s.bestStreak}</span><span>meilleure série</span></div>
+    </div>`;
+  $("#quiz").classList.add("hidden");
+  $("#recap").classList.remove("hidden");
+}
+
+function hideRecap() {
+  $("#recap").classList.add("hidden");
+  $("#quiz").classList.remove("hidden");
 }
 
 // ---------- Rendu ----------
@@ -418,13 +576,15 @@ function resetProgress() {
   saveState();
   renderLevel();
   renderStats();
-  newQuestion();
+  selectTimerMode(0);
 }
 
 // ---------- Initialisation ----------
 
 $("#play-btn").addEventListener("click", () => {
+  if (typeof Tone !== "undefined") Tone.start();
   if (currentQuestion) playInterval(currentQuestion);
+  else newQuestion(); // newQuestion() joue elle-même l'intervalle
 });
 
 $("#next-btn").addEventListener("click", newQuestion);
@@ -437,6 +597,12 @@ $("#stats-btn").addEventListener("click", () => {
 
 $("#reset-btn").addEventListener("click", resetProgress);
 
+document.querySelectorAll(".timer-opt").forEach((btn) => {
+  btn.addEventListener("click", () => selectTimerMode(Number(btn.dataset.min)));
+});
+$("#recap-replay").addEventListener("click", () => selectTimerMode(lastSessionMinutes));
+$("#recap-free").addEventListener("click", () => selectTimerMode(0));
+
 $("#direction-select").value = state.settings.direction;
 $("#direction-select").addEventListener("change", (e) => {
   state.settings.direction = e.target.value;
@@ -446,9 +612,4 @@ $("#direction-select").addEventListener("change", (e) => {
 
 renderLevel();
 renderAnswers();
-
-// Le contexte audio ne peut démarrer qu'après une interaction : la première
-// question est lancée au premier clic sur "Écouter".
-$("#play-btn").addEventListener("click", () => {
-  if (!currentQuestion) newQuestion();
-}, { once: true });
+initSampler(); // précharge les échantillons en tâche de fond

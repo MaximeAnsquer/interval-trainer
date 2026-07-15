@@ -22,6 +22,24 @@
     </header>
 
     <main>
+      <section id="timer-mode" class="card">
+        <div class="timer-mode-row">
+          <span class="timer-mode-label">⏱ Mode chrono :</span>
+          <div id="timer-options" class="timer-options">
+            <button class="timer-opt active" data-min="0">Libre</button>
+            <button class="timer-opt" data-min="1">1 min</button>
+            <button class="timer-opt" data-min="2">2 min</button>
+            <button class="timer-opt" data-min="3">3 min</button>
+            <button class="timer-opt" data-min="5">5 min</button>
+          </div>
+        </div>
+        <div id="session-hud" class="session-hud hidden">
+          <span id="session-time">1:00</span>
+          <span id="session-score">✅ 0 / 0</span>
+          <span id="session-streak"></span>
+        </div>
+      </section>
+
       <section id="quiz" class="card">
         <div class="level-info">
           <span id="level-label"></span>
@@ -29,6 +47,7 @@
         </div>
 
         <button id="play-btn" class="play-btn">▶ Écouter</button>
+        <div id="audio-status" class="audio-status hidden"></div>
 
         <div id="answers" class="answers"></div>
 
@@ -36,6 +55,15 @@
           <div id="feedback-text"></div>
           <div id="song-area"></div>
           <button id="next-btn" class="primary hidden">Continuer →</button>
+        </div>
+      </section>
+
+      <section id="recap" class="card hidden">
+        <h2 id="recap-title">⏱ Temps écoulé !</h2>
+        <div id="recap-body"></div>
+        <div class="recap-actions">
+          <button id="recap-replay" class="primary">🔁 Rejouer ce chrono</button>
+          <button id="recap-free" class="ghost">Retour au mode libre</button>
         </div>
       </section>
 
@@ -53,6 +81,7 @@
     </footer>
   </div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
   <script src="songs.js"></script>
   <script src="app.js"></script>
 </body>

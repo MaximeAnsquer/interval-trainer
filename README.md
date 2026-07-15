@@ -6,11 +6,12 @@ Petite application web pour apprendre à reconnaître les intervalles musicaux �
 
 ## Fonctionnement
 
-- Deux notes sont jouées avec un son de type piano (Web Audio API) ; il faut cliquer sur l'intervalle correspondant.
+- Deux notes sont jouées au piano (échantillons Salamander Grand Piano via [Tone.js](https://tonejs.github.io/), avec repli synthétisé si les échantillons ne se chargent pas) ; il faut cliquer sur l'intervalle correspondant.
 - **Progression** : on commence avec deux intervalles simples (quinte juste et octave). Un nouvel intervalle se débloque quand tous les intervalles en cours sont bien maîtrisés (≥ 80 % de réussite récente).
 - **Répétition adaptative** : les intervalles sur lesquels on se trompe le plus reviennent plus souvent.
 - **Chansons de référence** : en cas d'erreur, une liste de chansons célèbres commençant par cet intervalle est proposée (sources : [Musicca](https://www.musicca.com/interval-song-chart), [EarMaster](https://www.earmaster.com/products/free-tools/interval-song-chart-generator.html)). On en choisit une comme référence — ou on ajoute la sienne — et c'est ensuite elle qui est rappelée à chaque nouvelle erreur.
-- **Historique** conservé dans le navigateur (localStorage), avec statistiques par intervalle et bouton de réinitialisation.
+- **Mode chrono** : sessions de 1, 2, 3 ou 5 minutes avec décompte, score et meilleure série en direct, puis un récapitulatif en fin de session.
+- **Historique** conservé dans le navigateur (localStorage), avec statistiques par intervalle (mises à jour en temps réel) et bouton de réinitialisation.
 - Réglage de la direction des intervalles : ascendant, descendant ou les deux.
 
 ## Développement

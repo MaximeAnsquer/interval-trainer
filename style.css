@@ -69,6 +69,70 @@ button:active { transform: scale(0.97); }
   margin-bottom: 16px;
 }
 
+/* Mode chrono */
+#timer-mode { padding: 14px 20px; }
+.timer-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.timer-mode-label { font-size: 0.85rem; color: var(--muted); white-space: nowrap; }
+.timer-options { display: flex; gap: 6px; flex-wrap: wrap; }
+.timer-opt {
+  background: var(--card-2);
+  color: var(--muted);
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.timer-opt.active { background: var(--accent); color: white; }
+
+.session-hud {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--card-2);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+#session-time { font-size: 1.1rem; color: var(--gold); }
+#session-score { color: var(--text); font-size: 0.95rem; }
+#session-streak { color: var(--accent); font-size: 0.95rem; }
+
+.audio-status {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: -8px 0 16px;
+}
+.audio-status.warn { color: var(--gold); }
+
+/* Récapitulatif de session */
+.recap-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 16px 0 20px;
+}
+.recap-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: var(--card-2);
+  border-radius: 10px;
+  padding: 16px 8px;
+  text-align: center;
+}
+.recap-num { font-size: 1.6rem; font-weight: 800; color: var(--accent); }
+.recap-stat span:last-child { font-size: 0.78rem; color: var(--muted); }
+.recap-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.recap-actions .primary { margin-top: 0; flex: 1 1 auto; }
+.recap-actions .ghost { flex: 1 1 auto; text-align: center; }
+
 .level-info { margin-bottom: 16px; }
 #level-label { font-size: 0.85rem; color: var(--muted); }
 .level-bar {
@@ -214,7 +278,7 @@ button:active { transform: scale(0.97); }
 .hidden { display: none !important; }
 
 /* Stats */
-#stats h2 { font-size: 1.1rem; margin-bottom: 12px; }
+#stats h2, #recap h2 { font-size: 1.1rem; margin-bottom: 12px; }
 #stats-summary { color: var(--muted); font-size: 0.9rem; margin-bottom: 16px; }
 .stat-row {
   display: grid;
