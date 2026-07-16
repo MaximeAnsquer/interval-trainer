@@ -134,7 +134,14 @@ button:active { transform: scale(0.97); }
 .recap-actions .ghost { flex: 1 1 auto; text-align: center; }
 
 .level-info { margin-bottom: 16px; }
-#level-label { font-size: 0.85rem; color: var(--muted); }
+.level-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.level-row:not(:first-child) { margin-top: 10px; }
+.level-count { font-weight: 600; color: var(--text); }
 .level-bar {
   height: 6px;
   background: var(--card-2);
@@ -142,7 +149,7 @@ button:active { transform: scale(0.97); }
   margin-top: 6px;
   overflow: hidden;
 }
-#level-progress {
+#level-progress-asc, #level-progress-desc {
   height: 100%;
   width: 0%;
   background: linear-gradient(90deg, var(--accent), var(--gold));
@@ -281,6 +288,15 @@ button:active { transform: scale(0.97); }
 #stats h2, #recap h2 { font-size: 1.1rem; margin-bottom: 12px; margin-top: 24px; }
 #stats h2:first-child { margin-top: 0; }
 #stats-summary { color: var(--muted); font-size: 0.9rem; margin-bottom: 16px; }
+#stats h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 18px 0 8px;
+}
+#stats h3:first-of-type { margin-top: 0; }
 .stat-row {
   display: grid;
   grid-template-columns: 130px 1fr 70px 52px;

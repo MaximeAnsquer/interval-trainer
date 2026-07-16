@@ -3,7 +3,10 @@
 const STORAGE_KEY = "interval-trainer-v1";
 
 const defaultState = () => ({
-  level: 1, // nombre d'intervalles débloqués - 1 (level 1 = 2 intervalles)
+  // Intervalles débloqués - 1, suivis séparément par direction : ascendant
+  // et descendant se pratiquent avec des oreilles différentes, donc leur
+  // progression ne doit pas être partagée.
+  levels: { asc: 1, desc: 1 },
   history: [], // { i: intervalId, d: "asc"|"desc", a: réponse, ok: bool, t: timestamp }
   // "m3-asc" -> index dans SONGS[id][dir] (nombre, ancien format)
   //          ou { src: "builtin"|"custom", idx } (nouveau format)
@@ -14,14 +17,24 @@ const defaultState = () => ({
   settings: { direction: "asc" },
 });
 
+// Reprend un état sauvegardé avant la séparation asc/desc (un seul `level`
+// numérique partagé) en initialisant les deux directions à la même valeur,
+// pour ne pas faire perdre de progression aux utilisateurs existants.
+function migrateLevels(source) {
+  if (source && source.levels) return { ...defaultState().levels, ...source.levels };
+  if (source && typeof source.level === "number") return { asc: source.level, desc: source.level };
+  return defaultState().levels;
+}
+
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultState();
     const s = JSON.parse(raw);
-    return {
+    const merged = {
       ...defaultState(),
       ...s,
+      levels: migrateLevels(s),
       settings: { ...defaultState().settings, ...s.settings },
       bestScores: {
         ...defaultState().bestScores,
@@ -29,6 +42,8 @@ function loadState() {
         timed: { ...(s.bestScores && s.bestScores.timed) },
       },
     };
+    delete merged.level;
+    return merged;
   } catch {
     return defaultState();
   }
@@ -179,31 +194,41 @@ const MASTERY_ACCURACY = 0.8; // précision récente requise pour débloquer
 let currentQuestion = null;
 let answered = false;
 
-function unlockedIds() {
-  return UNLOCK_ORDER.slice(0, state.level + 1);
+function unlockedIds(direction) {
+  return UNLOCK_ORDER.slice(0, state.levels[direction] + 1);
+}
+
+// Direction à utiliser pour l'affichage (verrouillage des réponses, etc.)
+// quand aucune question n'est encore en cours : celle de la question en
+// cours si elle existe, sinon le réglage courant ("asc" par défaut si
+// "both", faute de mieux avant qu'une première question soit tirée).
+function activeDirection() {
+  if (currentQuestion) return currentQuestion.direction;
+  return state.settings.direction === "both" ? "asc" : state.settings.direction;
 }
 
 function intervalById(id) {
   return INTERVALS.find((i) => i.id === id);
 }
 
-function recentAttempts(id) {
-  return state.history.filter((h) => h.i === id).slice(-RECENT_WINDOW);
+function recentAttempts(id, direction) {
+  return state.history.filter((h) => h.i === id && h.d === direction).slice(-RECENT_WINDOW);
 }
 
-function recentAccuracy(id) {
-  const recent = recentAttempts(id);
+function recentAccuracy(id, direction) {
+  const recent = recentAttempts(id, direction);
   if (recent.length === 0) return null;
   return recent.filter((h) => h.ok).length / recent.length;
 }
 
-// Pondération adaptative : basée sur le taux de réussite global (le même
-// que celui affiché dans les statistiques), pour garantir qu'un intervalle
-// moins bien maîtrisé a toujours une probabilité au moins aussi élevée
-// qu'un intervalle mieux maîtrisé. Les nouveaux intervalles reviennent
-// aussi plus souvent le temps d'accumuler des tentatives.
-function intervalWeight(id, lastId = null) {
-  const attempts = state.history.filter((h) => h.i === id);
+// Pondération adaptative : basée sur le taux de réussite dans cette
+// direction (le même que celui affiché dans les statistiques), pour
+// garantir qu'un intervalle moins bien maîtrisé a toujours une probabilité
+// au moins aussi élevée qu'un intervalle mieux maîtrisé. Les nouveaux
+// intervalles reviennent aussi plus souvent le temps d'accumuler des
+// tentatives.
+function intervalWeight(id, direction, lastId = null) {
+  const attempts = state.history.filter((h) => h.i === id && h.d === direction);
   let w = 1;
   if (attempts.length > 0) {
     const acc = attempts.filter((h) => h.ok).length / attempts.length;
@@ -214,10 +239,10 @@ function intervalWeight(id, lastId = null) {
   return w;
 }
 
-function pickInterval() {
-  const pool = unlockedIds();
+function pickInterval(direction) {
+  const pool = unlockedIds(direction);
   const lastId = state.history.length ? state.history[state.history.length - 1].i : null;
-  const weights = pool.map((id) => intervalWeight(id, lastId));
+  const weights = pool.map((id) => intervalWeight(id, direction, lastId));
   const total = weights.reduce((a, b) => a + b, 0);
   let r = Math.random() * total;
   for (let k = 0; k < pool.length; k++) {
@@ -228,10 +253,10 @@ function pickInterval() {
 }
 
 function newQuestion() {
-  const id = pickInterval();
-  const interval = intervalById(id);
   const dirSetting = state.settings.direction;
   const direction = dirSetting === "both" ? (Math.random() < 0.5 ? "asc" : "desc") : dirSetting;
+  const id = pickInterval(direction);
+  const interval = intervalById(id);
   // Note grave entre do3 (48) et do5 (72), en gardant la note aiguë ≤ mi5 (76)
   const low = 48 + Math.floor(Math.random() * Math.min(25, 76 - 48 - interval.semitones + 1));
   const high = low + interval.semitones;
@@ -247,16 +272,16 @@ function newQuestion() {
   playInterval(currentQuestion);
 }
 
-function checkLevelUp() {
-  if (state.level >= UNLOCK_ORDER.length - 1) return null;
-  const allMastered = unlockedIds().every((id) => {
-    const attempts = state.history.filter((h) => h.i === id).length;
-    const acc = recentAccuracy(id);
+function checkLevelUp(direction) {
+  if (state.levels[direction] >= UNLOCK_ORDER.length - 1) return null;
+  const allMastered = unlockedIds(direction).every((id) => {
+    const attempts = state.history.filter((h) => h.i === id && h.d === direction).length;
+    const acc = recentAccuracy(id, direction);
     return attempts >= MASTERY_MIN_ATTEMPTS && acc !== null && acc >= MASTERY_ACCURACY;
   });
   if (allMastered) {
-    state.level++;
-    return intervalById(UNLOCK_ORDER[state.level]);
+    state.levels[direction]++;
+    return intervalById(UNLOCK_ORDER[state.levels[direction]]);
   }
   return null;
 }
@@ -274,7 +299,7 @@ function answer(id) {
   });
 
   let newInterval = null;
-  if (ok) newInterval = checkLevelUp();
+  if (ok) newInterval = checkLevelUp(currentQuestion.direction);
   saveState();
 
   if (sessionStats) {
@@ -299,7 +324,8 @@ function answer(id) {
   if (!$("#stats").classList.contains("hidden")) renderStats();
 
   if (newInterval) {
-    showToast(`🎉 Nouvel intervalle débloqué : ${newInterval.name} !`);
+    const dirLabel = currentQuestion.direction === "asc" ? "ascendant" : "descendant";
+    showToast(`🎉 Nouvel intervalle débloqué (${dirLabel}) : ${newInterval.name} !`);
   }
 
   if (ok) {
@@ -474,18 +500,18 @@ function handleNext() {
 const $ = (sel) => document.querySelector(sel);
 
 function renderLevel() {
-  const unlocked = unlockedIds().length;
-  $("#level-label").textContent =
-    unlocked >= INTERVALS.length
-      ? `Tous les intervalles sont débloqués (${unlocked}/${INTERVALS.length}) 🏆`
-      : `Intervalles débloqués : ${unlocked}/${INTERVALS.length}`;
-  $("#level-progress").style.width = `${(unlocked / INTERVALS.length) * 100}%`;
+  for (const dir of ["asc", "desc"]) {
+    const unlocked = unlockedIds(dir).length;
+    const label = unlocked >= INTERVALS.length ? `${unlocked}/${INTERVALS.length} 🏆` : `${unlocked}/${INTERVALS.length}`;
+    $(`#level-label-${dir}`).textContent = label;
+    $(`#level-progress-${dir}`).style.width = `${(unlocked / INTERVALS.length) * 100}%`;
+  }
 }
 
 function renderAnswers() {
   const container = $("#answers");
   container.innerHTML = "";
-  const unlocked = new Set(unlockedIds());
+  const unlocked = new Set(unlockedIds(activeDirection()));
   for (const interval of INTERVALS) {
     const btn = document.createElement("button");
     btn.className = "answer-btn";
@@ -622,11 +648,19 @@ function renderStats() {
     ? `${total} réponses au total — ${Math.round((correct / total) * 100)} % de réussite.`
     : "Aucune réponse pour l'instant. Lance-toi !";
 
-  // Probabilité d'apparition : poids adaptatif de l'intervalle rapporté au
-  // total (sans le malus anti-répétition, qui varie à chaque question).
-  const pool = unlockedIds();
-  const totalWeight = pool.reduce((sum, id) => sum + intervalWeight(id), 0);
-  const proba = (id) => intervalWeight(id) / totalWeight;
+  renderStatsTable("asc", "#stats-table-asc");
+  renderStatsTable("desc", "#stats-table-desc");
+  renderBestScores();
+  renderProgressChart();
+}
+
+// Tableau de statistiques pour une seule direction (ascendant ou
+// descendant) : la progression, la réussite et la probabilité d'apparition
+// sont propres à chaque direction.
+function renderStatsTable(direction, selector) {
+  const pool = unlockedIds(direction);
+  const totalWeight = pool.reduce((sum, id) => sum + intervalWeight(id, direction), 0);
+  const proba = (id) => intervalWeight(id, direction) / totalWeight;
 
   const unlocked = new Set(pool);
   const sorted = [...INTERVALS].sort((a, b) => {
@@ -648,7 +682,7 @@ function renderStats() {
       return `<div class="stat-row stat-locked"><span>🔒 ${interval.name}</span><div class="stat-bar-track"></div><span class="stat-pct">—</span><span class="stat-proba">—</span></div>`;
     }
     const probaPct = `${Math.round(proba(interval.id) * 100)} %`;
-    const attempts = state.history.filter((h) => h.i === interval.id);
+    const attempts = state.history.filter((h) => h.i === interval.id && h.d === direction);
     if (attempts.length === 0) {
       return `<div class="stat-row"><span>${interval.name}</span><div class="stat-bar-track"></div><span class="stat-pct">0 essai</span><span class="stat-proba">${probaPct}</span></div>`;
     }
@@ -662,10 +696,7 @@ function renderStats() {
       <span class="stat-proba">${probaPct}</span>
     </div>`;
   }).join("");
-  $("#stats-table").innerHTML = header + rows;
-
-  renderBestScores();
-  renderProgressChart();
+  $(selector).innerHTML = header + rows;
 }
 
 function renderBestScores() {
@@ -770,6 +801,7 @@ function importProgress(file) {
     state = {
       ...defaultState(),
       ...parsed,
+      levels: migrateLevels(parsed),
       settings: { ...defaultState().settings, ...parsed.settings },
       bestScores: {
         ...defaultState().bestScores,
@@ -777,6 +809,7 @@ function importProgress(file) {
         timed: { ...(parsed.bestScores && parsed.bestScores.timed) },
       },
     };
+    delete state.level;
     saveState();
     $("#direction-select").value = state.settings.direction;
     renderLevel();
